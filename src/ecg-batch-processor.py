@@ -39,8 +39,9 @@ from ecg_hrv_processor_v2 import ECGProcessor
 # ============================================================
 # CONFIGURATION
 # ============================================================
-DATA_DIR = r"C:\Data Org"
-OUTPUT_DIR = r"C:\Data Org\hrv_batch_results"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DATA_DIR = str(PROJECT_ROOT / "raw")
+OUTPUT_DIR = str(PROJECT_ROOT / "results")
 # ============================================================
 
 
@@ -58,26 +59,26 @@ def find_ecg_files(data_dir: str) -> list:
         print(f"ERROR: Directory not found: {data_dir}")
         return []
     
-    # Iterate through participant folders
-    for participant_folder in sorted(data_path.iterdir()):
-        if not participant_folder.is_dir():
+    # Iterate through ball folders
+    for ball_folder in sorted(data_path.iterdir()):
+        if not ball_folder.is_dir():
             continue
         
-        # Skip output folder
-        if "hrv" in participant_folder.name.lower() or "result" in participant_folder.name.lower():
-            continue
+        # # Skip output folder
+        # if "hrv" in ball_folder.name.lower() or "result" in ball_folder.name.lower():
+        #     continue
             
-        participant_id = participant_folder.name
+        participant_id = ball_folder.name
         
-        # Iterate through session folders
-        for session_folder in sorted(participant_folder.iterdir()):
-            if not session_folder.is_dir():
+        # Iterate through subject folders
+        for subject_folder in sorted(ball_folder.iterdir()):
+            if not subject_folder.is_dir():
                 continue
                 
-            session_id = session_folder.name
+            session_id = subject_folder.name
             
             # Find JSON files in session folder
-            for json_file in sorted(session_folder.glob("*.json")):
+            for json_file in sorted(subject_folder.glob("*.json")):
                 # Skip result files
                 if "hrv_result" in json_file.name.lower():
                     continue
@@ -142,12 +143,13 @@ def save_session_results(participant_id: str, session_id: str, filepath: Path,
     """
     # Create output folder: output_dir / participant_id / session_id
     session_output_dir = Path(output_dir) / participant_id / session_id
+    print(session_output_dir)
     session_output_dir.mkdir(parents=True, exist_ok=True)
     
     # Create result filename based on original file
     result_filename = filepath.stem + "_hrv_result.json"
     result_path = session_output_dir / result_filename
-    
+    print(result_path)
     # Prepare result data
     result_data = {
         "source_file": filepath.name,
@@ -180,20 +182,27 @@ def process_all_files(data_dir: str, output_dir: str) -> tuple:
     
     # Find all ECG files
     ecg_files = find_ecg_files(data_dir)
-    
+    # print(json.dumps(
+    #     [
+    #         {"ball_id": participant_id, "subject_id": session_id, "filepath": str(filepath)}
+    #         for participant_id, session_id, filepath in ecg_files
+    #     ],
+    #     indent=2,
+    #     ensure_ascii=False
+    # ))
     if not ecg_files:
         print(f"No ECG JSON files found in: {data_dir}")
         return None, None
     
     print(f"\nFound {len(ecg_files)} ECG files to process\n")
     print("=" * 80)
-    
+
     # Track results
     results = []
     participant_stats = defaultdict(lambda: {"total": 0, "passed": 0, "failed": 0, "sessions": set()})
-    
+   
     # Process each file
-    for i, (participant_id, session_id, filepath) in enumerate(ecg_files, 1):
+    for i, (participant_id, session_id, filepath) in enumerate(ecg_files[:1], 1):
         filename = filepath.name
         
         print(f"[{i}/{len(ecg_files)}] {participant_id}/{session_id}/{filename[:40]}...")
@@ -207,6 +216,7 @@ def process_all_files(data_dir: str, output_dir: str) -> tuple:
         if file_timestamp is None:
             print(f"    Warning: No valid timestamp in metadata, file will be excluded from time graphs")
         
+        
         # Initialize variables
         hrv_metrics = {}
         fail_reason = ""
@@ -214,6 +224,7 @@ def process_all_files(data_dir: str, output_dir: str) -> tuple:
         
         # Try to process
         try:
+            # Algorithm Starts here
             hrv_metrics = processor.process_session(str(filepath))
             
             if hrv_metrics and len(hrv_metrics) > 0:
@@ -274,7 +285,7 @@ def process_all_files(data_dir: str, output_dir: str) -> tuple:
             "HRV_RMSSD": hrv_metrics.get('HRV_RMSSD') if status == "PASS" else None,
             "Mean_HR": hrv_metrics.get('mean_hr_bpm') if status == "PASS" else None
         })
-    
+           
     print("\n" + "=" * 80)
     print("Processing complete!\n")
     
@@ -311,6 +322,7 @@ def process_all_files(data_dir: str, output_dir: str) -> tuple:
             participant_summary_df, 
             pd.DataFrame([totals])
         ], ignore_index=True)
+    
     
     return participant_summary_df, file_details_df
 
@@ -685,54 +697,54 @@ def main():
         print("No files processed.")
         return
     
-    # Print tables to console
-    print_tables(summary_df, details_df)
+    # # Print tables to console
+    # print_tables(summary_df, details_df)
     
-    # Save tables to CSV
-    save_tables(summary_df, details_df, OUTPUT_DIR)
+    # # Save tables to CSV
+    # save_tables(summary_df, details_df, OUTPUT_DIR)
     
-    # Create graphs
-    graphs_start = time.time()
-    create_all_graphs(details_df, OUTPUT_DIR)
-    graphs_duration = time.time() - graphs_start
+    # # Create graphs
+    # graphs_start = time.time()
+    # create_all_graphs(details_df, OUTPUT_DIR)
+    # graphs_duration = time.time() - graphs_start
     
-    # Calculate total duration
-    total_duration = time.time() - start_time
+    # # Calculate total duration
+    # total_duration = time.time() - start_time
     
-    # Print runtime log
-    print("\n" + "=" * 80)
-    print("RUNTIME LOG")
-    print("=" * 80)
-    print(f"Start time:           {datetime.fromtimestamp(start_time).strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"End time:             {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"Processing duration:  {format_duration(process_duration)}")
-    print(f"Graph generation:     {format_duration(graphs_duration)}")
-    print(f"Total runtime:        {format_duration(total_duration)}")
+    # # Print runtime log
+    # print("\n" + "=" * 80)
+    # print("RUNTIME LOG")
+    # print("=" * 80)
+    # print(f"Start time:           {datetime.fromtimestamp(start_time).strftime('%Y-%m-%d %H:%M:%S')}")
+    # print(f"End time:             {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    # print(f"Processing duration:  {format_duration(process_duration)}")
+    # print(f"Graph generation:     {format_duration(graphs_duration)}")
+    # print(f"Total runtime:        {format_duration(total_duration)}")
     
-    # Files processed stats
-    total_files = len(details_df)
-    if total_files > 0:
-        print(f"Files processed:      {total_files}")
-        print(f"Avg time per file:    {format_duration(process_duration / total_files)}")
+    # # Files processed stats
+    # total_files = len(details_df)
+    # if total_files > 0:
+    #     print(f"Files processed:      {total_files}")
+    #     print(f"Avg time per file:    {format_duration(process_duration / total_files)}")
     
-    # Save runtime log to file
-    log_path = Path(OUTPUT_DIR) / f"runtime_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
-    with open(log_path, 'w') as f:
-        f.write("ECG BATCH PROCESSOR - RUNTIME LOG\n")
-        f.write("=" * 50 + "\n")
-        f.write(f"Start time:           {datetime.fromtimestamp(start_time).strftime('%Y-%m-%d %H:%M:%S')}\n")
-        f.write(f"End time:             {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-        f.write(f"Processing duration:  {format_duration(process_duration)}\n")
-        f.write(f"Graph generation:     {format_duration(graphs_duration)}\n")
-        f.write(f"Total runtime:        {format_duration(total_duration)}\n")
-        f.write(f"Files processed:      {total_files}\n")
-        if total_files > 0:
-            f.write(f"Avg time per file:    {format_duration(process_duration / total_files)}\n")
-    print(f"\n✓ Runtime log saved: {log_path}")
+    # # Save runtime log to file
+    # log_path = Path(OUTPUT_DIR) / f"runtime_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+    # with open(log_path, 'w') as f:
+    #     f.write("ECG BATCH PROCESSOR - RUNTIME LOG\n")
+    #     f.write("=" * 50 + "\n")
+    #     f.write(f"Start time:           {datetime.fromtimestamp(start_time).strftime('%Y-%m-%d %H:%M:%S')}\n")
+    #     f.write(f"End time:             {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+    #     f.write(f"Processing duration:  {format_duration(process_duration)}\n")
+    #     f.write(f"Graph generation:     {format_duration(graphs_duration)}\n")
+    #     f.write(f"Total runtime:        {format_duration(total_duration)}\n")
+    #     f.write(f"Files processed:      {total_files}\n")
+    #     if total_files > 0:
+    #         f.write(f"Avg time per file:    {format_duration(process_duration / total_files)}\n")
+    # print(f"\n✓ Runtime log saved: {log_path}")
     
-    print("\n" + "=" * 80)
-    print("BATCH PROCESSING COMPLETE")
-    print("=" * 80)
+    # print("\n" + "=" * 80)
+    # print("BATCH PROCESSING COMPLETE")
+    # print("=" * 80)
 
 
 if __name__ == "__main__":
